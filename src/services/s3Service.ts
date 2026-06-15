@@ -73,7 +73,6 @@ export class S3Service implements IS3Service {
           Key: key,
           Body: buffer,
           ContentType: mimeType,
-          ACL: 'public-read',
         }),
       );
     } catch (error) {
