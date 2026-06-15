@@ -60,6 +60,7 @@ describe('OpenAIService', () => {
     await expect(service.generateCaptions('https://img')).rejects.toBeInstanceOf(
       AIServiceError,
     );
+    expect(client.chat.completions.create).toHaveBeenCalledTimes(2);
   });
 
   it('retries once on 429 and succeeds', async () => {

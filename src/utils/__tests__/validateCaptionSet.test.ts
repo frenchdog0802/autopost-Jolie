@@ -31,4 +31,25 @@ describe('validateCaptionSet', () => {
       }),
     ).toThrow(AIServiceError);
   });
+
+  it('extracts hashtags from caption when hashtags field is missing', () => {
+    const result = validateCaptionSet({
+      instagram: { caption: 'Hello world #tag1 #tag2' },
+      facebook: { caption: 'fb', hashtags: '#two' },
+      threads: { caption: 'th', hashtags: '#three' },
+    });
+
+    expect(result.instagram.caption).toBe('Hello world');
+    expect(result.instagram.hashtags).toBe('#tag1 #tag2');
+  });
+
+  it('accepts hashtags as an array', () => {
+    const result = validateCaptionSet({
+      instagram: { caption: 'ig', hashtags: ['#one', '#two'] },
+      facebook: { caption: 'fb', hashtags: '#two' },
+      threads: { caption: 'th', hashtags: '#three' },
+    });
+
+    expect(result.instagram.hashtags).toBe('#one #two');
+  });
 });

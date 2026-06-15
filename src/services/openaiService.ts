@@ -9,6 +9,7 @@ const SYSTEM_PROMPT = `你是一位社群媒體文案專家。根據使用者提
 規則：
 - 語言：繁體中文為主，可自然融入英文 hashtag
 - 回傳格式：嚴格 JSON，不含任何 markdown 或額外說明
+- 每個平台都必須有獨立的 caption 與 hashtags 欄位；hashtags 不可寫在 caption 裡
 - Instagram：活潑、有個性，適合年輕族群，附 5-10 個 hashtag
 - Facebook：親切自然，適合廣泛年齡層，附 3-5 個 hashtag
 - Threads：簡短口語，140 字以內
@@ -42,13 +43,30 @@ export class OpenAIService implements IAIService {
 
   async generateCaptions(imageUrl: string): Promise<CaptionSet> {
     try {
-      const response = await this.callWithOptionalRetry(imageUrl);
-      const content = response.choices[0]?.message?.content;
+      return await this.generateCaptionsWithRetry(imageUrl);
+    } catch (error) {
+      this.log.error({ err: error, imageUrl }, 'Caption generation failed');
 
-      if (!content) {
-        throw new AIServiceError('Empty AI response');
+      if (error instanceof AIServiceError) {
+        throw error;
       }
 
+      throw new AIServiceError('AI caption generation failed');
+    }
+  }
+
+  private async generateCaptionsWithRetry(
+    imageUrl: string,
+    attempt = 0,
+  ): Promise<CaptionSet> {
+    const response = await this.callWithOptionalRetry(imageUrl);
+    const content = response.choices[0]?.message?.content;
+
+    if (!content) {
+      throw new AIServiceError('Empty AI response');
+    }
+
+    try {
       const parsed: unknown = JSON.parse(content);
       const captions = validateCaptionSet(parsed);
 
@@ -62,13 +80,12 @@ export class OpenAIService implements IAIService {
 
       return captions;
     } catch (error) {
-      this.log.error({ err: error, imageUrl }, 'Caption generation failed');
-
-      if (error instanceof AIServiceError) {
-        throw error;
+      if (error instanceof AIServiceError && attempt === 0) {
+        this.log.warn({ imageUrl }, 'Invalid AI caption shape, retrying once');
+        return this.generateCaptionsWithRetry(imageUrl, attempt + 1);
       }
 
-      throw new AIServiceError('AI caption generation failed');
+      throw error;
     }
   }
 
