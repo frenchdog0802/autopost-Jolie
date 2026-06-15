@@ -115,7 +115,8 @@ export interface PostSession {
   imageUrl: string;
   captions: CaptionSet;
   createdAt: Date;
-  status: 'pending_confirm' | 'publishing' | 'done' | 'cancelled';
+  status: 'pending_confirm' | 'pending_edit' | 'publishing' | 'done' | 'cancelled';
+  editingPlatform?: 'instagram' | 'facebook' | 'threads';
 }
 
 export interface PublishResult {
@@ -223,7 +224,22 @@ LINE User                 Webhook Router         Line Handler          Publisher
     │◄── 發布結果（連結/失敗）───┤──── pushMessage ─────│
 ```
 
-### 3.3 子流程：重新生成 / 取消
+### 3.3 子流程：編輯文案
+
+```
+編輯：
+  Quick Reply: EDIT_IG / EDIT_FB / EDIT_THREADS
+    → 更新 Session status=pending_edit, editingPlatform=目標平台
+    → pushMessage 提示使用者輸入新文案
+
+  使用者傳送文字訊息（status=pending_edit）
+    → 將文字寫入 session.captions[editingPlatform].caption
+    → hashtags 設為空字串（使用者可將 hashtag 一併寫入 caption）
+    → 更新 Session status=pending_confirm
+    → pushMessage 新預覽 + Quick Reply
+```
+
+### 3.4 子流程：重新生成 / 取消
 
 ```
 重新生成：
@@ -240,12 +256,12 @@ LINE User                 Webhook Router         Line Handler          Publisher
     → pushMessage "已取消"
 ```
 
-### 3.4 Session TTL 清理
+### 3.5 Session TTL 清理
 
 ```
 SessionStore 內部 setInterval (每 60 秒)
   → 掃描所有 session
-  → createdAt + 10 分鐘 < now AND status == 'pending_confirm'
+  → createdAt + 10 分鐘 < now AND status IN ('pending_confirm', 'pending_edit')
     → 刪除 S3 圖片
     → 刪除 session
 ```
@@ -280,7 +296,11 @@ router.post('/webhook', lineMiddleware, (req, res) => {
 | LINE Event 類型 | 條件 | 動作 |
 |----------------|------|------|
 | `message` | `message.type === 'image'` | 啟動圖片處理流程 |
+| `message` | `message.type === 'text'` 且 session 為 `pending_edit` | 更新文案並推送新預覽 |
 | `postback` | `data === 'action=confirm'` | 執行發布流程 |
+| `postback` | `data === 'action=edit_instagram'` | 進入 Instagram 文案編輯 |
+| `postback` | `data === 'action=edit_facebook'` | 進入 Facebook 文案編輯 |
+| `postback` | `data === 'action=edit_threads'` | 進入 Threads 文案編輯 |
 | `postback` | `data === 'action=regenerate'` | 重新生成文案 |
 | `postback` | `data === 'action=cancel'` | 取消並清除 |
 | 其他 | — | 忽略（不回應） |
@@ -371,9 +391,10 @@ interface PostSession {
   captions: CaptionSet;         // AI 生成的三平台文案
   createdAt: Date;              // 建立時間，TTL 計算用
   status: SessionStatus;        // 狀態機狀態
+  editingPlatform?: Platform;   // pending_edit 時正在編輯的平台
 }
 
-type SessionStatus = 'pending_confirm' | 'publishing' | 'done' | 'cancelled';
+type SessionStatus = 'pending_confirm' | 'pending_edit' | 'publishing' | 'done' | 'cancelled';
 ```
 
 ### 5.2 Session Store 實作規格
@@ -395,7 +416,7 @@ class InMemorySessionStore implements ISessionStore {
 ```
 
 **TTL 清理邏輯：**
-- 只清理 `status === 'pending_confirm'` 的 session（publishing / done 由流程自行清除）
+- 只清理 `status === 'pending_confirm'` 或 `status === 'pending_edit'` 的 session（publishing / done 由流程自行清除）
 - 清理時同步刪除對應 S3 圖片（呼叫 s3Service.delete）
 - 清理失敗（S3 刪除失敗）只 log，不影響 session 清除
 
@@ -417,25 +438,32 @@ class InMemorySessionStore implements ISessionStore {
                                    │
                                    ▼
                          ┌──────────────────┐
-                         │  pending_confirm  │◄──┐
-                         └────────┬─────────┘   │
-                                  │              │ REGENERATE
-                      ┌───────────┼───────┐      │
-                      │           │       │      │
-                   CONFIRM   REGENERATE  CANCEL  │
-                      │           │       │      │
-                      ▼           └───────┘      │
-              ┌──────────────┐                   │
-              │  publishing  │                   │
-              └──────┬───────┘                   │
-                     │                           │
-           ┌─────────┴────────┐                  │
-           │                  │                  │
-           ▼                  ▼                  │
-        ┌──────┐         ┌──────────┐            │
-        │ done │         │cancelled │            │
-        └──────┘         └──────────┘            │
-    (session 清除)      (session 清除)            │
+                         │  pending_confirm  │◄──────────┐
+                         └────────┬─────────┘           │
+                                  │                     │ REGENERATE / 編輯完成
+                      ┌───────────┼───────┐             │
+                      │           │       │             │
+                   CONFIRM   EDIT_*    REGENERATE       │
+                      │           │       │             │
+                      │           ▼       │             │
+                      │  ┌──────────────┐ │             │
+                      │  │ pending_edit │─┘             │
+                      │  └──────────────┘               │
+                      │           │                     │
+                      │        CANCEL                   │
+                      │           │                     │
+                      ▼           ▼                     │
+              ┌──────────────┐  ┌──────────┐            │
+              │  publishing  │  │cancelled │            │
+              └──────┬───────┘  └──────────┘            │
+                     │                                   │
+           ┌─────────┴────────┐                          │
+           │                  │                          │
+           ▼                  ▼                          │
+        ┌──────┐         (session 清除)                   │
+        │ done │                                          │
+        └──────┘                                          │
+    (session 清除)                                        │
 ```
 
 ### 6.2 狀態轉換規則
@@ -445,9 +473,11 @@ class InMemorySessionStore implements ISessionStore {
 | — | 收到圖片 | `pending_confirm` | 上傳 S3、生成文案、推送預覽 |
 | `pending_confirm` | CONFIRM | `publishing` | 發布三平台 |
 | `publishing` | 發布完成 | `done` | 刪除 S3、清除 session |
+| `pending_confirm` | EDIT_* | `pending_edit` | 推送編輯提示 |
+| `pending_edit` | 文字訊息 | `pending_confirm` | 更新文案、推送新預覽 |
 | `pending_confirm` | REGENERATE | `pending_confirm` | 重新呼叫 AI |
-| `pending_confirm` | CANCEL | `cancelled` | 刪除 S3、清除 session |
-| `pending_confirm` | TTL 到期 | (清除) | 刪除 S3、清除 session |
+| `pending_confirm` / `pending_edit` | CANCEL | `cancelled` | 刪除 S3、清除 session |
+| `pending_confirm` / `pending_edit` | TTL 到期 | (清除) | 刪除 S3、清除 session |
 
 ### 6.3 並發保護
 

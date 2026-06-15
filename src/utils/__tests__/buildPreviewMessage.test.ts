@@ -17,13 +17,16 @@ describe('buildPreviewMessage', () => {
     expect(message.text).toContain('TH text');
   });
 
-  it('includes three Quick Reply postback actions', () => {
+  it('includes six Quick Reply postback actions', () => {
     const message = buildPreviewMessage(captions);
     const items = message.quickReply?.items ?? [];
 
-    expect(items).toHaveLength(3);
+    expect(items).toHaveLength(6);
     expect(items.map((item) => item.action.data)).toEqual([
       POSTBACK_ACTIONS.confirm,
+      POSTBACK_ACTIONS.editInstagram,
+      POSTBACK_ACTIONS.editFacebook,
+      POSTBACK_ACTIONS.editThreads,
       POSTBACK_ACTIONS.regenerate,
       POSTBACK_ACTIONS.cancel,
     ]);

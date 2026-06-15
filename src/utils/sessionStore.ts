@@ -52,7 +52,10 @@ export class InMemorySessionStore implements ISessionStore {
     const now = Date.now();
 
     for (const [userId, session] of this.store.entries()) {
-      if (session.status !== 'pending_confirm') {
+      if (
+        session.status !== 'pending_confirm' &&
+        session.status !== 'pending_edit'
+      ) {
         continue;
       }
 

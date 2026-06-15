@@ -292,4 +292,79 @@ describe('LineHandler', () => {
       { type: 'text', text: LINE_MESSAGES.cancelled },
     ]);
   });
+
+  it('starts edit flow and prompts user for instagram caption', async () => {
+    const session: PostSession = {
+      userId: 'U123',
+      imageS3Key: 'uploads/test.jpg',
+      imageUrl: 'https://img',
+      captions,
+      createdAt: new Date(),
+      status: 'pending_confirm',
+    };
+
+    const deps = createDeps({
+      sessionStore: {
+        get: vi.fn().mockReturnValue(session),
+        set: vi.fn(),
+        delete: vi.fn(),
+      },
+    });
+    const handler = new LineHandler(deps);
+
+    await handler.handleEvent({
+      type: 'postback',
+      source: { userId: 'U123' },
+      postback: { data: POSTBACK_ACTIONS.editInstagram },
+    });
+
+    expect(deps.sessionStore.set).toHaveBeenCalledWith(
+      'U123',
+      expect.objectContaining({
+        status: 'pending_edit',
+        editingPlatform: 'instagram',
+      }),
+    );
+    expect(deps.lineService.pushMessage).toHaveBeenCalledWith('U123', [
+      { type: 'text', text: LINE_MESSAGES.editPromptInstagram },
+    ]);
+  });
+
+  it('saves edited caption and shows preview again', async () => {
+    const session: PostSession = {
+      userId: 'U123',
+      imageS3Key: 'uploads/test.jpg',
+      imageUrl: 'https://img',
+      captions,
+      createdAt: new Date(),
+      status: 'pending_edit',
+      editingPlatform: 'instagram',
+    };
+
+    const deps = createDeps({
+      sessionStore: {
+        get: vi.fn().mockReturnValue(session),
+        set: vi.fn(),
+        delete: vi.fn(),
+      },
+    });
+    const handler = new LineHandler(deps);
+
+    await handler.handleEvent({
+      type: 'message',
+      source: { userId: 'U123' },
+      message: { type: 'text', text: 'new caption #tag' },
+    });
+
+    expect(deps.sessionStore.set).toHaveBeenCalledWith(
+      'U123',
+      expect.objectContaining({
+        status: 'pending_confirm',
+        captions: expect.objectContaining({
+          instagram: { caption: 'new caption #tag', hashtags: '' },
+        }),
+      }),
+    );
+    expect(deps.lineService.pushMessage).toHaveBeenCalled();
+  });
 });

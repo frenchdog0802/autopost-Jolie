@@ -59,6 +59,26 @@ describe('InMemorySessionStore', () => {
     expect(store.get('U123')).toBeUndefined();
   });
 
+  it('cleans expired pending_edit sessions and calls onExpire', async () => {
+    const onExpire = vi.fn();
+    const store = new InMemorySessionStore({
+      ttlMs: 1000,
+      onExpire,
+    });
+
+    const session = {
+      ...sampleSession('pending_edit'),
+      createdAt: new Date(Date.now() - 2000),
+    };
+    store.set('U123', session);
+
+    vi.advanceTimersByTime(60_000);
+    await Promise.resolve();
+
+    expect(onExpire).toHaveBeenCalledWith(session);
+    expect(store.get('U123')).toBeUndefined();
+  });
+
   it('does not clean publishing sessions on TTL', async () => {
     const onExpire = vi.fn();
     const store = new InMemorySessionStore({

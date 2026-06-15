@@ -39,7 +39,11 @@ describe('types', () => {
 
   it('defines SessionStatus union', () => {
     expectTypeOf<SessionStatus>().toEqualTypeOf<
-      'pending_confirm' | 'publishing' | 'done' | 'cancelled'
+      | 'pending_confirm'
+      | 'pending_edit'
+      | 'publishing'
+      | 'done'
+      | 'cancelled'
     >();
   });
 
@@ -51,6 +55,7 @@ describe('types', () => {
       captions: CaptionSet;
       createdAt: Date;
       status: SessionStatus;
+      editingPlatform?: 'instagram' | 'facebook' | 'threads';
     }>();
   });
 

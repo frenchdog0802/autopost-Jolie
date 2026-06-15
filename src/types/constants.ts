@@ -3,6 +3,9 @@ import type { Platform } from './index.js';
 /** Quick Reply postback data values for the confirmation flow. */
 export const POSTBACK_ACTIONS = {
   confirm: 'action=confirm',
+  editInstagram: 'action=edit_instagram',
+  editFacebook: 'action=edit_facebook',
+  editThreads: 'action=edit_threads',
   regenerate: 'action=regenerate',
   cancel: 'action=cancel',
 } as const;
@@ -23,4 +26,8 @@ export const LINE_MESSAGES = {
   sessionExpired: '操作已過期，請重新上傳圖片',
   publishingInProgress: '目前有貼文正在發布中，請稍後再試',
   cancelled: '已取消',
+  editPromptInstagram: '請輸入 Instagram 文案（含 hashtag）：',
+  editPromptFacebook: '請輸入 Facebook 文案（含 hashtag）：',
+  editPromptThreads: '請輸入 Threads 文案（含 hashtag）：',
+  editSaved: '文案已更新，請確認：',
 } as const;

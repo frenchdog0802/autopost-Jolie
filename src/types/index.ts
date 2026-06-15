@@ -22,6 +22,7 @@ export interface CaptionSet {
  */
 export type SessionStatus =
   | 'pending_confirm'
+  | 'pending_edit'
   | 'publishing'
   | 'done'
   | 'cancelled';
@@ -42,6 +43,8 @@ export interface PostSession {
   createdAt: Date;
   /** Current state in the confirmation and publish flow. */
   status: SessionStatus;
+  /** Platform being edited when status is pending_edit. */
+  editingPlatform?: Platform;
 }
 
 /** Supported social publishing platforms. */

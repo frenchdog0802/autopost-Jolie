@@ -5,6 +5,7 @@ import type {
   IS3Service,
   ISessionStore,
   LineMessage,
+  Platform,
   PostSession,
 } from '../types/index.js';
 import { LINE_MESSAGES, POSTBACK_ACTIONS } from '../types/constants.js';
@@ -18,7 +19,7 @@ import { createChildLogger } from '../utils/logger.js';
 export interface LineWebhookEvent {
   type: string;
   source?: { userId?: string; type?: string };
-  message?: { type?: string; id?: string };
+  message?: { type?: string; id?: string; text?: string };
   postback?: { data?: string };
   replyToken?: string;
 }
@@ -54,6 +55,11 @@ export class LineHandler {
 
     if (event.type === 'message' && event.message?.type === 'image') {
       await this.handleImageMessage(userId, event.message.id);
+      return;
+    }
+
+    if (event.type === 'message' && event.message?.type === 'text') {
+      await this.handleTextMessage(userId, event.message.text);
       return;
     }
 
@@ -123,6 +129,15 @@ export class LineHandler {
       case POSTBACK_ACTIONS.confirm:
         await this.handleConfirm(userId);
         break;
+      case POSTBACK_ACTIONS.editInstagram:
+        await this.handleEditStart(userId, 'instagram');
+        break;
+      case POSTBACK_ACTIONS.editFacebook:
+        await this.handleEditStart(userId, 'facebook');
+        break;
+      case POSTBACK_ACTIONS.editThreads:
+        await this.handleEditStart(userId, 'threads');
+        break;
       case POSTBACK_ACTIONS.regenerate:
         await this.handleRegenerate(userId);
         break;
@@ -132,6 +147,64 @@ export class LineHandler {
       default:
         break;
     }
+  }
+
+  private async handleTextMessage(
+    userId: string,
+    text?: string,
+  ): Promise<void> {
+    const session = this.deps.sessionStore.get(userId);
+    if (!session || session.status !== 'pending_edit' || !session.editingPlatform) {
+      return;
+    }
+
+    if (!text?.trim()) {
+      return;
+    }
+
+    const platform = session.editingPlatform;
+    const updatedCaptions = {
+      ...session.captions,
+      [platform]: {
+        caption: text.trim(),
+        hashtags: '',
+      },
+    };
+
+    const updated: PostSession = {
+      ...session,
+      captions: updatedCaptions,
+      status: 'pending_confirm',
+      editingPlatform: undefined,
+    };
+
+    this.deps.sessionStore.set(userId, updated);
+    await this.pushMessages(userId, [buildPreviewMessage(updatedCaptions)]);
+  }
+
+  private async handleEditStart(
+    userId: string,
+    platform: Platform,
+  ): Promise<void> {
+    const session = this.deps.sessionStore.get(userId);
+    if (!session || session.status !== 'pending_confirm') {
+      await this.pushText(userId, LINE_MESSAGES.sessionExpired);
+      return;
+    }
+
+    const promptByPlatform = {
+      instagram: LINE_MESSAGES.editPromptInstagram,
+      facebook: LINE_MESSAGES.editPromptFacebook,
+      threads: LINE_MESSAGES.editPromptThreads,
+    } as const;
+
+    this.deps.sessionStore.set(userId, {
+      ...session,
+      status: 'pending_edit',
+      editingPlatform: platform,
+    });
+
+    await this.pushText(userId, promptByPlatform[platform]);
   }
 
   private async handleConfirm(userId: string): Promise<void> {
