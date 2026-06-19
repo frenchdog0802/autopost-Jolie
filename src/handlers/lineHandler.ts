@@ -11,6 +11,7 @@ import { LINE_MESSAGES, POSTBACK_ACTIONS } from '../types/constants.js';
 import { S3UploadError } from '../types/errors.js';
 import { AIServiceError } from '../types/errors.js';
 import { buildPreviewMessage } from '../utils/buildPreviewMessage.js';
+import { parseEditedCaptions } from '../utils/parseEditedCaptions.js';
 import { formatPublishResults } from '../utils/formatPublishResults.js';
 import { createChildLogger } from '../utils/logger.js';
 
@@ -153,12 +154,7 @@ export class LineHandler {
       return;
     }
 
-    const platformCaption = { caption: text.trim(), hashtags: '' };
-    const updatedCaptions = {
-      instagram: platformCaption,
-      facebook: platformCaption,
-      threads: platformCaption,
-    };
+    const updatedCaptions = parseEditedCaptions(text);
 
     const updated: PostSession = {
       ...session,

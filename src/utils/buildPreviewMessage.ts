@@ -1,5 +1,6 @@
 import type { CaptionSet, LineMessage } from '../types/index.js';
 import { POSTBACK_ACTIONS } from '../types/constants.js';
+import { captionsAreIdentical } from './parseEditedCaptions.js';
 
 const PLATFORM_LABELS = {
   instagram: '📸 Instagram',
@@ -11,12 +12,11 @@ const PLATFORM_LABELS = {
  * Build a preview text message with Quick Reply actions for caption confirmation.
  */
 export function buildPreviewMessage(captions: CaptionSet): LineMessage {
-  const preview = (['instagram', 'facebook', 'threads'] as const)
-    .map((platform) => {
-      const { caption, hashtags } = captions[platform];
-      return `${PLATFORM_LABELS[platform]}\n${caption}\n${hashtags}`;
-    })
-    .join('\n\n');
+  const preview = captionsAreIdentical(captions)
+    ? formatSingleCaption(captions.instagram)
+    : (['instagram', 'facebook', 'threads'] as const)
+        .map((platform) => formatPlatformSection(platform, captions[platform]))
+        .join('\n\n');
 
   return {
     type: 'text',
@@ -58,4 +58,17 @@ export function buildPreviewMessage(captions: CaptionSet): LineMessage {
       ],
     },
   };
+}
+
+function formatPlatformSection(
+  platform: keyof typeof PLATFORM_LABELS,
+  { caption, hashtags }: CaptionSet[keyof CaptionSet],
+): string {
+  return hashtags
+    ? `${PLATFORM_LABELS[platform]}\n${caption}\n${hashtags}`
+    : `${PLATFORM_LABELS[platform]}\n${caption}`;
+}
+
+function formatSingleCaption({ caption, hashtags }: CaptionSet['instagram']): string {
+  return hashtags ? `${caption}\n\n${hashtags}` : caption;
 }

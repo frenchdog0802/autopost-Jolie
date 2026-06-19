@@ -20,14 +20,34 @@ function isTokenExpiredError(body: GraphErrorBody): boolean {
  */
 export class FacebookPublisher implements IPublisher {
   private readonly pageId: string;
-  private readonly accessToken: string;
+  private readonly userAccessToken: string;
   private readonly log = createChildLogger({ platform: 'facebook' });
 
   constructor(
     config: Pick<RuntimeConfig, 'FACEBOOK_PAGE_ID' | 'META_USER_ACCESS_TOKEN'>,
   ) {
     this.pageId = config.FACEBOOK_PAGE_ID;
-    this.accessToken = config.META_USER_ACCESS_TOKEN;
+    this.userAccessToken = config.META_USER_ACCESS_TOKEN;
+  }
+
+  private async getPageAccessToken(): Promise<string> {
+    const url = new URL(`${GRAPH_API_BASE}/${this.pageId}`);
+    url.searchParams.set('fields', 'access_token');
+    url.searchParams.set('access_token', this.userAccessToken);
+
+    const response = await fetch(url);
+    const body = (await response.json()) as GraphErrorBody & {
+      access_token?: string;
+    };
+
+    if (!response.ok || !body.access_token) {
+      if (isTokenExpiredError(body)) {
+        throw new Error('facebook token 可能已過期，請更新 access token');
+      }
+      throw new Error(body.error?.message ?? 'Facebook page token fetch failed');
+    }
+
+    return body.access_token;
   }
 
   async publish(
@@ -38,11 +58,13 @@ export class FacebookPublisher implements IPublisher {
     const fullCaption = `${caption}\n${hashtags}`.trim();
 
     try {
+      const pageAccessToken = await this.getPageAccessToken();
+
       const url = new URL(`${GRAPH_API_BASE}/${this.pageId}/photos`);
       url.searchParams.set('url', imageUrl);
       url.searchParams.set('caption', fullCaption);
       url.searchParams.set('published', 'true');
-      url.searchParams.set('access_token', this.accessToken);
+      url.searchParams.set('access_token', pageAccessToken);
 
       const response = await fetch(url, { method: 'POST' });
       const body = (await response.json()) as GraphErrorBody & {

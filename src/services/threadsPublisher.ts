@@ -15,6 +15,17 @@ function isTokenExpiredError(body: GraphErrorBody): boolean {
   return body.error?.code === 190;
 }
 
+function formatThreadsTokenError(body: GraphErrorBody): string {
+  const message = body.error?.message ?? '';
+  if (message.includes('Cannot parse access token')) {
+    return 'threads access token 無效，請至 Meta Developer 重新產生 THREADS_ACCESS_TOKEN';
+  }
+  if (isTokenExpiredError(body)) {
+    return 'threads token 可能已過期，請更新 access token';
+  }
+  return message;
+}
+
 /**
  * Threads publisher using Meta Graph API two-step publish flow.
  */
@@ -76,10 +87,11 @@ export class ThreadsPublisher implements IPublisher {
     const body = (await response.json()) as GraphErrorBody & { id?: string };
 
     if (!response.ok || !body.id) {
+      const tokenError = formatThreadsTokenError(body);
       if (isTokenExpiredError(body)) {
-        throw new Error('threads token 可能已過期，請更新 access token');
+        throw new Error(tokenError);
       }
-      throw new Error(body.error?.message ?? 'Threads container creation failed');
+      throw new Error(tokenError || 'Threads container creation failed');
     }
 
     return body.id;
@@ -94,10 +106,11 @@ export class ThreadsPublisher implements IPublisher {
     const body = (await response.json()) as GraphErrorBody & { id?: string };
 
     if (!response.ok || !body.id) {
+      const tokenError = formatThreadsTokenError(body);
       if (isTokenExpiredError(body)) {
-        throw new Error('threads token 可能已過期，請更新 access token');
+        throw new Error(tokenError);
       }
-      throw new Error(body.error?.message ?? 'Threads publish failed');
+      throw new Error(tokenError || 'Threads publish failed');
     }
 
     return body.id;

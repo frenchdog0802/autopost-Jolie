@@ -21,6 +21,9 @@ describe('FacebookPublisher', () => {
 
   it('publishes photo to page', async () => {
     graphApiServer.use(
+      http.get('https://graph.facebook.com/v21.0/page-id', () =>
+        HttpResponse.json({ access_token: 'page-token' }),
+      ),
       http.post('https://graph.facebook.com/v21.0/page-id/photos', () =>
         HttpResponse.json({ post_id: '123_456' }),
       ),
@@ -35,6 +38,9 @@ describe('FacebookPublisher', () => {
 
   it('returns failure on server error', async () => {
     graphApiServer.use(
+      http.get('https://graph.facebook.com/v21.0/page-id', () =>
+        HttpResponse.json({ access_token: 'page-token' }),
+      ),
       http.post('https://graph.facebook.com/v21.0/page-id/photos', () =>
         HttpResponse.json({ error: { message: 'fail' } }, { status: 500 }),
       ),
@@ -48,6 +54,9 @@ describe('FacebookPublisher', () => {
 
   it('returns token expiry hint for OAuth errors', async () => {
     graphApiServer.use(
+      http.get('https://graph.facebook.com/v21.0/page-id', () =>
+        HttpResponse.json({ access_token: 'page-token' }),
+      ),
       http.post('https://graph.facebook.com/v21.0/page-id/photos', () =>
         HttpResponse.json(
           { error: { message: 'expired', code: 190 } },

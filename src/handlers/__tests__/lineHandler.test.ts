@@ -377,6 +377,11 @@ describe('LineHandler', () => {
         },
       }),
     );
-    expect(deps.lineService.pushMessage).toHaveBeenCalled();
+    expect(deps.lineService.pushMessage).toHaveBeenCalledWith('U123', [
+      expect.objectContaining({
+        type: 'text',
+        text: '請確認以下文案：\n\nnew caption #tag',
+      }),
+    ]);
   });
 });
