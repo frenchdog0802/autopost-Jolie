@@ -5,7 +5,6 @@ import { ConfigError } from '../types/errors.js';
 export const REQUIRED_ENV_VARS = [
   'LINE_CHANNEL_ACCESS_TOKEN',
   'LINE_CHANNEL_SECRET',
-  'ALLOWED_LINE_USER_ID',
   'OPENAI_API_KEY',
   'AWS_ACCESS_KEY_ID',
   'AWS_SECRET_ACCESS_KEY',

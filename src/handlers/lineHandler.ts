@@ -5,13 +5,11 @@ import type {
   IS3Service,
   ISessionStore,
   LineMessage,
-  Platform,
   PostSession,
 } from '../types/index.js';
 import { LINE_MESSAGES, POSTBACK_ACTIONS } from '../types/constants.js';
 import { S3UploadError } from '../types/errors.js';
 import { AIServiceError } from '../types/errors.js';
-import { isAllowedUser } from '../utils/auth.js';
 import { buildPreviewMessage } from '../utils/buildPreviewMessage.js';
 import { formatPublishResults } from '../utils/formatPublishResults.js';
 import { createChildLogger } from '../utils/logger.js';
@@ -25,7 +23,6 @@ export interface LineWebhookEvent {
 }
 
 export interface LineHandlerDeps {
-  allowedUserId: string;
   lineService: ILineService;
   s3Service: IS3Service;
   aiService: IAIService;
@@ -49,7 +46,7 @@ export class LineHandler {
 
   async handleEvent(event: LineWebhookEvent): Promise<void> {
     const userId = event.source?.userId;
-    if (!userId || !isAllowedUser(userId, this.deps.allowedUserId)) {
+    if (!userId) {
       return;
     }
 
@@ -129,14 +126,8 @@ export class LineHandler {
       case POSTBACK_ACTIONS.confirm:
         await this.handleConfirm(userId);
         break;
-      case POSTBACK_ACTIONS.editInstagram:
-        await this.handleEditStart(userId, 'instagram');
-        break;
-      case POSTBACK_ACTIONS.editFacebook:
-        await this.handleEditStart(userId, 'facebook');
-        break;
-      case POSTBACK_ACTIONS.editThreads:
-        await this.handleEditStart(userId, 'threads');
+      case POSTBACK_ACTIONS.edit:
+        await this.handleEditStart(userId);
         break;
       case POSTBACK_ACTIONS.regenerate:
         await this.handleRegenerate(userId);
@@ -154,7 +145,7 @@ export class LineHandler {
     text?: string,
   ): Promise<void> {
     const session = this.deps.sessionStore.get(userId);
-    if (!session || session.status !== 'pending_edit' || !session.editingPlatform) {
+    if (!session || session.status !== 'pending_edit') {
       return;
     }
 
@@ -162,49 +153,36 @@ export class LineHandler {
       return;
     }
 
-    const platform = session.editingPlatform;
+    const platformCaption = { caption: text.trim(), hashtags: '' };
     const updatedCaptions = {
-      ...session.captions,
-      [platform]: {
-        caption: text.trim(),
-        hashtags: '',
-      },
+      instagram: platformCaption,
+      facebook: platformCaption,
+      threads: platformCaption,
     };
 
     const updated: PostSession = {
       ...session,
       captions: updatedCaptions,
       status: 'pending_confirm',
-      editingPlatform: undefined,
     };
 
     this.deps.sessionStore.set(userId, updated);
     await this.pushMessages(userId, [buildPreviewMessage(updatedCaptions)]);
   }
 
-  private async handleEditStart(
-    userId: string,
-    platform: Platform,
-  ): Promise<void> {
+  private async handleEditStart(userId: string): Promise<void> {
     const session = this.deps.sessionStore.get(userId);
     if (!session || session.status !== 'pending_confirm') {
       await this.pushText(userId, LINE_MESSAGES.sessionExpired);
       return;
     }
 
-    const promptByPlatform = {
-      instagram: LINE_MESSAGES.editPromptInstagram,
-      facebook: LINE_MESSAGES.editPromptFacebook,
-      threads: LINE_MESSAGES.editPromptThreads,
-    } as const;
-
     this.deps.sessionStore.set(userId, {
       ...session,
       status: 'pending_edit',
-      editingPlatform: platform,
     });
 
-    await this.pushText(userId, promptByPlatform[platform]);
+    await this.pushText(userId, LINE_MESSAGES.editPrompt);
   }
 
   private async handleConfirm(userId: string): Promise<void> {

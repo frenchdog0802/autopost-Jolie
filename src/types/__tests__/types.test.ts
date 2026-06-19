@@ -55,7 +55,6 @@ describe('types', () => {
       captions: CaptionSet;
       createdAt: Date;
       status: SessionStatus;
-      editingPlatform?: 'instagram' | 'facebook' | 'threads';
     }>();
   });
 

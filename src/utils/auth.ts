@@ -17,10 +17,3 @@ export function validateLineSignature(
     throw new SignatureError('Invalid LINE webhook signature');
   }
 }
-
-/**
- * Check whether a LINE user ID is on the allow list.
- */
-export function isAllowedUser(userId: string, allowedUserId: string): boolean {
-  return userId === allowedUserId;
-}

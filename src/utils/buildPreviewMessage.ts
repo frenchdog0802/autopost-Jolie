@@ -35,24 +35,8 @@ export function buildPreviewMessage(captions: CaptionSet): LineMessage {
           type: 'action',
           action: {
             type: 'postback',
-            label: '✏️ 改 IG',
-            data: POSTBACK_ACTIONS.editInstagram,
-          },
-        },
-        {
-          type: 'action',
-          action: {
-            type: 'postback',
-            label: '✏️ 改 FB',
-            data: POSTBACK_ACTIONS.editFacebook,
-          },
-        },
-        {
-          type: 'action',
-          action: {
-            type: 'postback',
-            label: '✏️ 改 Threads',
-            data: POSTBACK_ACTIONS.editThreads,
+            label: '✏️ 編輯貼文',
+            data: POSTBACK_ACTIONS.edit,
           },
         },
         {

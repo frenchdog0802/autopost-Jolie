@@ -27,7 +27,6 @@ function createDeps(overrides: Partial<{
   publisherRegistry: IPublisherRegistry;
 }> = {}) {
   return {
-    allowedUserId: 'U123',
     lineService: {
       pushMessage: vi.fn().mockResolvedValue(undefined),
       replyMessage: vi.fn(),
@@ -68,7 +67,20 @@ describe('LineHandler', () => {
     vi.clearAllMocks();
   });
 
-  it('ignores non-whitelist users silently', async () => {
+  it('ignores events without a user id', async () => {
+    const deps = createDeps();
+    const handler = new LineHandler(deps);
+
+    await handler.handleEvent({
+      type: 'message',
+      source: {},
+      message: { type: 'image', id: 'm1' },
+    });
+
+    expect(deps.lineService.pushMessage).not.toHaveBeenCalled();
+  });
+
+  it('handles events from any user id', async () => {
     const deps = createDeps();
     const handler = new LineHandler(deps);
 
@@ -78,7 +90,7 @@ describe('LineHandler', () => {
       message: { type: 'image', id: 'm1' },
     });
 
-    expect(deps.lineService.pushMessage).not.toHaveBeenCalled();
+    expect(deps.lineService.pushMessage).toHaveBeenCalled();
   });
 
   it('ignores unknown event types', async () => {
@@ -293,7 +305,7 @@ describe('LineHandler', () => {
     ]);
   });
 
-  it('starts edit flow and prompts user for instagram caption', async () => {
+  it('starts edit flow and prompts user for new caption', async () => {
     const session: PostSession = {
       userId: 'U123',
       imageS3Key: 'uploads/test.jpg',
@@ -315,22 +327,21 @@ describe('LineHandler', () => {
     await handler.handleEvent({
       type: 'postback',
       source: { userId: 'U123' },
-      postback: { data: POSTBACK_ACTIONS.editInstagram },
+      postback: { data: POSTBACK_ACTIONS.edit },
     });
 
     expect(deps.sessionStore.set).toHaveBeenCalledWith(
       'U123',
       expect.objectContaining({
         status: 'pending_edit',
-        editingPlatform: 'instagram',
       }),
     );
     expect(deps.lineService.pushMessage).toHaveBeenCalledWith('U123', [
-      { type: 'text', text: LINE_MESSAGES.editPromptInstagram },
+      { type: 'text', text: LINE_MESSAGES.editPrompt },
     ]);
   });
 
-  it('saves edited caption and shows preview again', async () => {
+  it('saves edited caption to all platforms and shows preview again', async () => {
     const session: PostSession = {
       userId: 'U123',
       imageS3Key: 'uploads/test.jpg',
@@ -338,7 +349,6 @@ describe('LineHandler', () => {
       captions,
       createdAt: new Date(),
       status: 'pending_edit',
-      editingPlatform: 'instagram',
     };
 
     const deps = createDeps({
@@ -360,9 +370,11 @@ describe('LineHandler', () => {
       'U123',
       expect.objectContaining({
         status: 'pending_confirm',
-        captions: expect.objectContaining({
+        captions: {
           instagram: { caption: 'new caption #tag', hashtags: '' },
-        }),
+          facebook: { caption: 'new caption #tag', hashtags: '' },
+          threads: { caption: 'new caption #tag', hashtags: '' },
+        },
       }),
     );
     expect(deps.lineService.pushMessage).toHaveBeenCalled();

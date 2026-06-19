@@ -88,7 +88,6 @@ export function bootstrap(options: BootstrapOptions = {}): BootstrapResult {
   const lineHandler =
     options.services?.lineHandler ??
     new LineHandler({
-      allowedUserId: config.ALLOWED_LINE_USER_ID,
       lineService,
       s3Service,
       aiService,

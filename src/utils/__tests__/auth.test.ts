@@ -2,7 +2,7 @@ import { createHmac } from 'node:crypto';
 import { describe, expect, it } from 'vitest';
 import { validateSignature } from '@line/bot-sdk';
 import { SignatureError } from '../../types/errors.js';
-import { isAllowedUser, validateLineSignature } from '../auth.js';
+import { validateLineSignature } from '../auth.js';
 
 function sign(body: Buffer, secret: string): string {
   return createHmac('sha256', secret).update(body).digest('base64');
@@ -28,11 +28,6 @@ describe('auth utils', () => {
     expect(() =>
       validateLineSignature(Buffer.from('{}'), 'bad-signature', 'secret'),
     ).toThrow(SignatureError);
-  });
-
-  it('matches allowed user by strict equality', () => {
-    expect(isAllowedUser('U123', 'U123')).toBe(true);
-    expect(isAllowedUser('U999', 'U123')).toBe(false);
   });
 
   it('generated signature passes bot-sdk validation', () => {

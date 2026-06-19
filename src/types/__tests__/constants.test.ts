@@ -4,9 +4,7 @@ import { LINE_MESSAGES, PLATFORMS, POSTBACK_ACTIONS } from '../constants.js';
 describe('constants', () => {
   it('defines POSTBACK_ACTIONS matching design.md event routing', () => {
     expect(POSTBACK_ACTIONS.confirm).toBe('action=confirm');
-    expect(POSTBACK_ACTIONS.editInstagram).toBe('action=edit_instagram');
-    expect(POSTBACK_ACTIONS.editFacebook).toBe('action=edit_facebook');
-    expect(POSTBACK_ACTIONS.editThreads).toBe('action=edit_threads');
+    expect(POSTBACK_ACTIONS.edit).toBe('action=edit');
     expect(POSTBACK_ACTIONS.regenerate).toBe('action=regenerate');
     expect(POSTBACK_ACTIONS.cancel).toBe('action=cancel');
   });
@@ -25,8 +23,6 @@ describe('constants', () => {
       '目前有貼文正在發布中，請稍後再試',
     );
     expect(LINE_MESSAGES.cancelled).toBe('已取消');
-    expect(LINE_MESSAGES.editPromptInstagram).toBe(
-      '請輸入 Instagram 文案（含 hashtag）：',
-    );
+    expect(LINE_MESSAGES.editPrompt).toBe('請輸入新文案（含 hashtag）：');
   });
 });

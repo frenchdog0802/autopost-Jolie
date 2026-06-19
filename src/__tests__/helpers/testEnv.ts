@@ -1,7 +1,6 @@
 export const VALID_TEST_ENV: Record<string, string> = {
   LINE_CHANNEL_ACCESS_TOKEN: 'line-token',
   LINE_CHANNEL_SECRET: 'line-secret',
-  ALLOWED_LINE_USER_ID: 'U123',
   OPENAI_API_KEY: 'openai-key',
   AWS_ACCESS_KEY_ID: 'aws-key',
   AWS_SECRET_ACCESS_KEY: 'aws-secret',
