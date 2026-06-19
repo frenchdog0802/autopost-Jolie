@@ -21,14 +21,14 @@ describe('ThreadsPublisher', () => {
 
   it('publishes through container and publish steps', async () => {
     graphApiServer.use(
-      http.post('https://graph.facebook.com/v21.0/threads-id/threads', () =>
+      http.post('https://graph.threads.net/v1.0/threads-id/threads', () =>
         HttpResponse.json({ id: 'creation-1' }),
       ),
       http.post(
-        'https://graph.facebook.com/v21.0/threads-id/threads_publish',
+        'https://graph.threads.net/v1.0/threads-id/threads_publish',
         () => HttpResponse.json({ id: 'media-1' }),
       ),
-      http.get('https://graph.facebook.com/v21.0/media-1', () =>
+      http.get('https://graph.threads.net/v1.0/media-1', () =>
         HttpResponse.json({ permalink: 'https://threads.net/t/1' }),
       ),
     );
@@ -42,7 +42,7 @@ describe('ThreadsPublisher', () => {
 
   it('returns failure when first step fails', async () => {
     graphApiServer.use(
-      http.post('https://graph.facebook.com/v21.0/threads-id/threads', () =>
+      http.post('https://graph.threads.net/v1.0/threads-id/threads', () =>
         HttpResponse.json({ error: { message: 'fail' } }, { status: 400 }),
       ),
     );
@@ -55,7 +55,7 @@ describe('ThreadsPublisher', () => {
 
   it('returns token expiry hint for OAuth errors', async () => {
     graphApiServer.use(
-      http.post('https://graph.facebook.com/v21.0/threads-id/threads', () =>
+      http.post('https://graph.threads.net/v1.0/threads-id/threads', () =>
         HttpResponse.json(
           { error: { message: 'expired', code: 190 } },
           { status: 400 },

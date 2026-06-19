@@ -27,7 +27,7 @@ describe('constants', () => {
       '目前有貼文正在發布中，請稍後再試',
     );
     expect(LINE_MESSAGES.cancelled).toBe('已取消');
-    expect(LINE_MESSAGES.dishInputPrompt).toContain('菜色1: 滷肉飯');
+    expect(LINE_MESSAGES.dishInputPrompt).toContain('滷肉飯\n雞腿排');
     expect(LINE_MESSAGES.dishInputInvalid).toContain('格式不正確');
     expect(LINE_MESSAGES.editPrompt).toBe('請輸入新文案（含 hashtag）：');
   });

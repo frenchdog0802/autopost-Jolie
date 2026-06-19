@@ -29,8 +29,8 @@ export const LINE_MESSAGES = {
   publishingInProgress: '目前有貼文正在發布中，請稍後再試',
   cancelled: '已取消',
   dishInputPrompt:
-    '請輸入正確菜色（格式如下）：\n菜色1: 滷肉飯\n菜色2: 雞腿排\n菜色3: 燙青菜',
+    '請輸入正確菜色（每行一道，範例）：\n滷肉飯\n雞腿排\n燙青菜',
   dishInputInvalid:
-    '格式不正確，請依照以下格式輸入：\n菜色1: xxx\n菜色2: xxx',
+    '格式不正確，請每行輸入一道菜色，例如：\n滷肉飯\n雞腿排',
   editPrompt: '請輸入新文案（含 hashtag）：',
 } as const;

@@ -1,8 +1,6 @@
 /**
- * Format dish names for LINE display (菜色1: xxx).
+ * Format dish names for LINE display (one dish per line).
  */
 export function formatDishList(dishes: string[]): string {
-  return dishes
-    .map((dish, index) => `菜色${index + 1}: ${dish}`)
-    .join('\n');
+  return dishes.join('\n');
 }

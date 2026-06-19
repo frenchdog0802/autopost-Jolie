@@ -2,7 +2,7 @@ import type { RuntimeConfig } from '../config/index.js';
 import type { IPublisher, PublishResult } from '../types/index.js';
 import { createChildLogger } from '../utils/logger.js';
 
-const GRAPH_API_BASE = 'https://graph.facebook.com/v21.0';
+const GRAPH_API_BASE = 'https://graph.threads.net/v1.0';
 
 interface GraphErrorBody {
   error?: {

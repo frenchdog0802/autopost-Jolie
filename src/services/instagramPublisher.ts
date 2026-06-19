@@ -3,6 +3,8 @@ import type { IPublisher, PublishResult } from '../types/index.js';
 import { createChildLogger } from '../utils/logger.js';
 
 const GRAPH_API_BASE = 'https://graph.facebook.com/v21.0';
+const MEDIA_POLL_INTERVAL_MS = 3_000;
+const MEDIA_POLL_TIMEOUT_MS = 60_000;
 
 interface GraphErrorBody {
   error?: {
@@ -10,6 +12,13 @@ interface GraphErrorBody {
     code?: number;
   };
 }
+
+type MediaStatusCode =
+  | 'EXPIRED'
+  | 'ERROR'
+  | 'FINISHED'
+  | 'IN_PROGRESS'
+  | 'PUBLISHED';
 
 function isTokenExpiredError(body: GraphErrorBody): boolean {
   return body.error?.code === 190;
@@ -46,6 +55,7 @@ export class InstagramPublisher implements IPublisher {
 
     try {
       const creationId = await this.createMedia(imageUrl, fullCaption);
+      await this.waitForMediaReady(creationId);
       const mediaId = await this.publishMedia(creationId);
       const postUrl = await this.fetchPermalink(mediaId);
 
@@ -88,6 +98,44 @@ export class InstagramPublisher implements IPublisher {
     }
 
     return body.id;
+  }
+
+  private async waitForMediaReady(creationId: string): Promise<void> {
+    const deadline = Date.now() + MEDIA_POLL_TIMEOUT_MS;
+
+    while (Date.now() < deadline) {
+      const url = new URL(`${GRAPH_API_BASE}/${creationId}`);
+      url.searchParams.set('fields', 'status_code');
+      url.searchParams.set('access_token', this.accessToken);
+
+      const response = await fetch(url);
+      const body = (await response.json()) as GraphErrorBody & {
+        status_code?: MediaStatusCode;
+      };
+
+      if (!response.ok) {
+        if (isTokenExpiredError(body)) {
+          throw new Error(formatTokenError('instagram'));
+        }
+        throw new Error(
+          body.error?.message ?? 'Instagram media status check failed',
+        );
+      }
+
+      if (body.status_code === 'FINISHED') {
+        return;
+      }
+
+      if (body.status_code === 'ERROR' || body.status_code === 'EXPIRED') {
+        throw new Error(
+          `Instagram media processing failed (${body.status_code})`,
+        );
+      }
+
+      await new Promise((resolve) => setTimeout(resolve, MEDIA_POLL_INTERVAL_MS));
+    }
+
+    throw new Error('Instagram media processing timed out');
   }
 
   private async publishMedia(creationId: string): Promise<string> {

@@ -302,7 +302,7 @@ describe('LineHandler', () => {
       source: { userId: 'U123' },
       message: {
         type: 'text',
-        text: '菜色1: 牛肉麵\n菜色2: 滷蛋',
+        text: '牛肉麵\n滷蛋',
       },
     });
 
@@ -320,7 +320,7 @@ describe('LineHandler', () => {
     );
   });
 
-  it('rejects invalid manual dish input format', async () => {
+  it('rejects manual dish input with more than five dishes', async () => {
     const session: PostSession = {
       userId: 'U123',
       imageS3Key: 'uploads/test.jpg',
@@ -342,7 +342,7 @@ describe('LineHandler', () => {
     await handler.handleEvent({
       type: 'message',
       source: { userId: 'U123' },
-      message: { type: 'text', text: '牛肉麵、滷蛋' },
+      message: { type: 'text', text: 'a\nb\nc\nd\ne\nf' },
     });
 
     expect(deps.aiService.generateCaptions).not.toHaveBeenCalled();

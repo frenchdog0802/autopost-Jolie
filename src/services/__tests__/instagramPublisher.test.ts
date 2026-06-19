@@ -24,6 +24,9 @@ describe('InstagramPublisher', () => {
       http.post('https://graph.facebook.com/v21.0/ig-id/media', () =>
         HttpResponse.json({ id: 'creation-1' }),
       ),
+      http.get('https://graph.facebook.com/v21.0/creation-1', () =>
+        HttpResponse.json({ status_code: 'FINISHED' }),
+      ),
       http.post('https://graph.facebook.com/v21.0/ig-id/media_publish', () =>
         HttpResponse.json({ id: 'media-1' }),
       ),

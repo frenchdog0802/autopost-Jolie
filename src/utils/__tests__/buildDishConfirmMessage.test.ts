@@ -7,9 +7,7 @@ describe('buildDishConfirmMessage', () => {
     const message = buildDishConfirmMessage(['滷肉飯', '雞腿排', '燙青菜']);
 
     expect(message.text).toContain('辨識到以下主菜');
-    expect(message.text).toContain('菜色1: 滷肉飯');
-    expect(message.text).toContain('菜色2: 雞腿排');
-    expect(message.text).toContain('菜色3: 燙青菜');
+    expect(message.text).toContain('滷肉飯\n雞腿排\n燙青菜');
 
     const items = message.quickReply?.items ?? [];
     expect(items).toHaveLength(2);
