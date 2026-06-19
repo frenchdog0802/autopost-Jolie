@@ -6,6 +6,7 @@ const sampleSession = (status: PostSession['status']): PostSession => ({
   userId: 'U123',
   imageS3Key: 'uploads/test.jpg',
   imageUrl: 'https://example.com/test.jpg',
+  dishes: ['滷肉飯'],
   captions: {
     instagram: { caption: 'ig', hashtags: '#a' },
     facebook: { caption: 'fb', hashtags: '#b' },
@@ -36,6 +37,46 @@ describe('InMemorySessionStore', () => {
     expect(store.get('U123')?.status).toBe('publishing');
 
     store.delete('U123');
+    expect(store.get('U123')).toBeUndefined();
+  });
+
+  it('cleans expired pending_dish_confirm sessions and calls onExpire', async () => {
+    const onExpire = vi.fn();
+    const store = new InMemorySessionStore({
+      ttlMs: 1000,
+      onExpire,
+    });
+
+    const session = {
+      ...sampleSession('pending_dish_confirm'),
+      createdAt: new Date(Date.now() - 2000),
+    };
+    store.set('U123', session);
+
+    vi.advanceTimersByTime(60_000);
+    await Promise.resolve();
+
+    expect(onExpire).toHaveBeenCalledWith(session);
+    expect(store.get('U123')).toBeUndefined();
+  });
+
+  it('cleans expired pending_dish_input sessions and calls onExpire', async () => {
+    const onExpire = vi.fn();
+    const store = new InMemorySessionStore({
+      ttlMs: 1000,
+      onExpire,
+    });
+
+    const session = {
+      ...sampleSession('pending_dish_input'),
+      createdAt: new Date(Date.now() - 2000),
+    };
+    store.set('U123', session);
+
+    vi.advanceTimersByTime(60_000);
+    await Promise.resolve();
+
+    expect(onExpire).toHaveBeenCalledWith(session);
     expect(store.get('U123')).toBeUndefined();
   });
 

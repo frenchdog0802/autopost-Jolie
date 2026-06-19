@@ -21,6 +21,8 @@ export interface CaptionSet {
  * Session lifecycle states for the post confirmation flow.
  */
 export type SessionStatus =
+  | 'pending_dish_confirm'
+  | 'pending_dish_input'
   | 'pending_confirm'
   | 'pending_edit'
   | 'publishing'
@@ -37,8 +39,10 @@ export interface PostSession {
   imageS3Key: string;
   /** Public URL of the uploaded image. */
   imageUrl: string;
+  /** Confirmed dish names (1–5 items). */
+  dishes: string[];
   /** AI-generated captions awaiting user confirmation. */
-  captions: CaptionSet;
+  captions?: CaptionSet;
   /** Session creation timestamp. */
   createdAt: Date;
   /** Current state in the confirmation and publish flow. */
@@ -79,13 +83,18 @@ export interface IS3Service {
 }
 
 /**
- * Contract for generating multi-platform captions from an image URL.
+ * Contract for dish recognition and multi-platform caption generation.
  */
 export interface IAIService {
   /**
-   * Generate captions for Instagram, Facebook, and Threads.
+   * Recognize 1–5 main dishes from an image URL.
    */
-  generateCaptions(imageUrl: string): Promise<CaptionSet>;
+  recognizeDishes(imageUrl: string): Promise<string[]>;
+
+  /**
+   * Generate captions for Instagram, Facebook, and Threads from confirmed dishes.
+   */
+  generateCaptions(imageUrl: string, dishes: string[]): Promise<CaptionSet>;
 }
 
 /**

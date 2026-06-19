@@ -13,6 +13,8 @@ import type {
   PostSession,
 } from '../../types/index.js';
 
+const dishes = ['滷肉飯', '雞腿排', '燙青菜'];
+
 const captions: CaptionSet = {
   instagram: { caption: 'ig', hashtags: '#a' },
   facebook: { caption: 'fb', hashtags: '#b' },
@@ -42,6 +44,7 @@ function createDeps(overrides: Partial<{
       ...overrides.s3Service,
     },
     aiService: {
+      recognizeDishes: vi.fn().mockResolvedValue(dishes),
       generateCaptions: vi.fn().mockResolvedValue(captions),
       ...overrides.aiService,
     },
@@ -105,7 +108,7 @@ describe('LineHandler', () => {
     expect(deps.lineService.pushMessage).not.toHaveBeenCalled();
   });
 
-  it('handles image happy path', async () => {
+  it('handles image happy path with dish recognition', async () => {
     const deps = createDeps();
     const handler = new LineHandler(deps);
 
@@ -117,12 +120,21 @@ describe('LineHandler', () => {
 
     expect(deps.lineService.getMessageContent).toHaveBeenCalledWith('m1');
     expect(deps.s3Service.upload).toHaveBeenCalled();
-    expect(deps.aiService.generateCaptions).toHaveBeenCalledWith('https://img');
+    expect(deps.aiService.recognizeDishes).toHaveBeenCalledWith('https://img');
+    expect(deps.aiService.generateCaptions).not.toHaveBeenCalled();
     expect(deps.sessionStore.set).toHaveBeenCalledWith(
       'U123',
-      expect.objectContaining({ status: 'pending_confirm' }),
+      expect.objectContaining({
+        status: 'pending_dish_confirm',
+        dishes,
+      }),
     );
-    expect(deps.lineService.pushMessage).toHaveBeenCalled();
+    expect(deps.lineService.pushMessage).toHaveBeenCalledWith('U123', [
+      expect.objectContaining({
+        type: 'text',
+        text: expect.stringContaining('辨識到以下主菜'),
+      }),
+    ]);
   });
 
   it('pushes S3 error message when upload fails', async () => {
@@ -146,12 +158,13 @@ describe('LineHandler', () => {
     ]);
   });
 
-  it('deletes S3 and pushes AI error when caption generation fails', async () => {
+  it('deletes S3 and pushes dish recognition error when recognition fails', async () => {
     const deps = createDeps({
       aiService: {
-        generateCaptions: vi
+        recognizeDishes: vi
           .fn()
           .mockRejectedValue(new AIServiceError('fail')),
+        generateCaptions: vi.fn(),
       },
     });
     const handler = new LineHandler(deps);
@@ -164,7 +177,7 @@ describe('LineHandler', () => {
 
     expect(deps.s3Service.delete).toHaveBeenCalledWith('uploads/test.jpg');
     expect(deps.lineService.pushMessage).toHaveBeenCalledWith('U123', [
-      { type: 'text', text: LINE_MESSAGES.aiFailed },
+      { type: 'text', text: LINE_MESSAGES.dishRecognitionFailed },
     ]);
   });
 
@@ -192,11 +205,158 @@ describe('LineHandler', () => {
     ]);
   });
 
+  it('generates captions after dish confirm', async () => {
+    const session: PostSession = {
+      userId: 'U123',
+      imageS3Key: 'uploads/test.jpg',
+      imageUrl: 'https://img',
+      dishes,
+      createdAt: new Date(),
+      status: 'pending_dish_confirm',
+    };
+
+    const deps = createDeps({
+      sessionStore: {
+        get: vi.fn().mockReturnValue(session),
+        set: vi.fn(),
+        delete: vi.fn(),
+      },
+    });
+    const handler = new LineHandler(deps);
+
+    await handler.handleEvent({
+      type: 'postback',
+      source: { userId: 'U123' },
+      postback: { data: POSTBACK_ACTIONS.dishConfirm },
+    });
+
+    expect(deps.aiService.generateCaptions).toHaveBeenCalledWith(
+      'https://img',
+      dishes,
+    );
+    expect(deps.sessionStore.set).toHaveBeenCalledWith(
+      'U123',
+      expect.objectContaining({
+        status: 'pending_confirm',
+        captions,
+      }),
+    );
+  });
+
+  it('prompts manual dish input when dish recognition is rejected', async () => {
+    const session: PostSession = {
+      userId: 'U123',
+      imageS3Key: 'uploads/test.jpg',
+      imageUrl: 'https://img',
+      dishes,
+      createdAt: new Date(),
+      status: 'pending_dish_confirm',
+    };
+
+    const deps = createDeps({
+      sessionStore: {
+        get: vi.fn().mockReturnValue(session),
+        set: vi.fn(),
+        delete: vi.fn(),
+      },
+    });
+    const handler = new LineHandler(deps);
+
+    await handler.handleEvent({
+      type: 'postback',
+      source: { userId: 'U123' },
+      postback: { data: POSTBACK_ACTIONS.dishReject },
+    });
+
+    expect(deps.sessionStore.set).toHaveBeenCalledWith(
+      'U123',
+      expect.objectContaining({ status: 'pending_dish_input' }),
+    );
+    expect(deps.lineService.pushMessage).toHaveBeenCalledWith('U123', [
+      { type: 'text', text: LINE_MESSAGES.dishInputPrompt },
+    ]);
+  });
+
+  it('generates captions from manual dish input', async () => {
+    const session: PostSession = {
+      userId: 'U123',
+      imageS3Key: 'uploads/test.jpg',
+      imageUrl: 'https://img',
+      dishes,
+      createdAt: new Date(),
+      status: 'pending_dish_input',
+    };
+
+    const manualDishes = ['牛肉麵', '滷蛋'];
+    const deps = createDeps({
+      sessionStore: {
+        get: vi.fn().mockReturnValue(session),
+        set: vi.fn(),
+        delete: vi.fn(),
+      },
+    });
+    const handler = new LineHandler(deps);
+
+    await handler.handleEvent({
+      type: 'message',
+      source: { userId: 'U123' },
+      message: {
+        type: 'text',
+        text: '菜色1: 牛肉麵\n菜色2: 滷蛋',
+      },
+    });
+
+    expect(deps.aiService.generateCaptions).toHaveBeenCalledWith(
+      'https://img',
+      manualDishes,
+    );
+    expect(deps.sessionStore.set).toHaveBeenCalledWith(
+      'U123',
+      expect.objectContaining({
+        status: 'pending_confirm',
+        dishes: manualDishes,
+        captions,
+      }),
+    );
+  });
+
+  it('rejects invalid manual dish input format', async () => {
+    const session: PostSession = {
+      userId: 'U123',
+      imageS3Key: 'uploads/test.jpg',
+      imageUrl: 'https://img',
+      dishes,
+      createdAt: new Date(),
+      status: 'pending_dish_input',
+    };
+
+    const deps = createDeps({
+      sessionStore: {
+        get: vi.fn().mockReturnValue(session),
+        set: vi.fn(),
+        delete: vi.fn(),
+      },
+    });
+    const handler = new LineHandler(deps);
+
+    await handler.handleEvent({
+      type: 'message',
+      source: { userId: 'U123' },
+      message: { type: 'text', text: '牛肉麵、滷蛋' },
+    });
+
+    expect(deps.aiService.generateCaptions).not.toHaveBeenCalled();
+    expect(deps.lineService.pushMessage).toHaveBeenCalledWith('U123', [
+      { type: 'text', text: LINE_MESSAGES.dishInputInvalid },
+    ]);
+  });
+
   it('handles confirm flow', async () => {
     const session: PostSession = {
       userId: 'U123',
       imageS3Key: 'uploads/test.jpg',
       imageUrl: 'https://img',
+      dishes,
       captions,
       createdAt: new Date(),
       status: 'pending_confirm',
@@ -244,11 +404,12 @@ describe('LineHandler', () => {
     ]);
   });
 
-  it('regenerates captions from existing session', async () => {
+  it('regenerates captions from existing session dishes', async () => {
     const session: PostSession = {
       userId: 'U123',
       imageS3Key: 'uploads/test.jpg',
       imageUrl: 'https://img',
+      dishes,
       captions,
       createdAt: new Date(),
       status: 'pending_confirm',
@@ -269,7 +430,10 @@ describe('LineHandler', () => {
       postback: { data: POSTBACK_ACTIONS.regenerate },
     });
 
-    expect(deps.aiService.generateCaptions).toHaveBeenCalledTimes(1);
+    expect(deps.aiService.generateCaptions).toHaveBeenCalledWith(
+      'https://img',
+      dishes,
+    );
     expect(deps.sessionStore.set).toHaveBeenCalled();
   });
 
@@ -278,6 +442,7 @@ describe('LineHandler', () => {
       userId: 'U123',
       imageS3Key: 'uploads/test.jpg',
       imageUrl: 'https://img',
+      dishes,
       captions,
       createdAt: new Date(),
       status: 'pending_confirm',
@@ -310,6 +475,7 @@ describe('LineHandler', () => {
       userId: 'U123',
       imageS3Key: 'uploads/test.jpg',
       imageUrl: 'https://img',
+      dishes,
       captions,
       createdAt: new Date(),
       status: 'pending_confirm',
@@ -346,6 +512,7 @@ describe('LineHandler', () => {
       userId: 'U123',
       imageS3Key: 'uploads/test.jpg',
       imageUrl: 'https://img',
+      dishes,
       captions,
       createdAt: new Date(),
       status: 'pending_edit',

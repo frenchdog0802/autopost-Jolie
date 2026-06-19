@@ -39,6 +39,8 @@ describe('types', () => {
 
   it('defines SessionStatus union', () => {
     expectTypeOf<SessionStatus>().toEqualTypeOf<
+      | 'pending_dish_confirm'
+      | 'pending_dish_input'
       | 'pending_confirm'
       | 'pending_edit'
       | 'publishing'
@@ -52,7 +54,8 @@ describe('types', () => {
       userId: string;
       imageS3Key: string;
       imageUrl: string;
-      captions: CaptionSet;
+      dishes: string[];
+      captions?: CaptionSet;
       createdAt: Date;
       status: SessionStatus;
     }>();
@@ -79,7 +82,11 @@ describe('types', () => {
 
   it('defines IAIService methods', () => {
     expectTypeOf<IAIService>().toEqualTypeOf<{
-      generateCaptions: (imageUrl: string) => Promise<CaptionSet>;
+      recognizeDishes: (imageUrl: string) => Promise<string[]>;
+      generateCaptions: (
+        imageUrl: string,
+        dishes: string[],
+      ) => Promise<CaptionSet>;
     }>();
   });
 

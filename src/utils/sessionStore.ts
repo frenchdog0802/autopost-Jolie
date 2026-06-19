@@ -53,6 +53,8 @@ export class InMemorySessionStore implements ISessionStore {
 
     for (const [userId, session] of this.store.entries()) {
       if (
+        session.status !== 'pending_dish_confirm' &&
+        session.status !== 'pending_dish_input' &&
         session.status !== 'pending_confirm' &&
         session.status !== 'pending_edit'
       ) {

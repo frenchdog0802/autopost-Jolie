@@ -10,8 +10,10 @@ import type {
 import { LINE_MESSAGES, POSTBACK_ACTIONS } from '../types/constants.js';
 import { S3UploadError } from '../types/errors.js';
 import { AIServiceError } from '../types/errors.js';
+import { buildDishConfirmMessage } from '../utils/buildDishConfirmMessage.js';
 import { buildPreviewMessage } from '../utils/buildPreviewMessage.js';
 import { parseEditedCaptions } from '../utils/parseEditedCaptions.js';
+import { parseManualDishes } from '../utils/parseManualDishes.js';
 import { formatPublishResults } from '../utils/formatPublishResults.js';
 import { createChildLogger } from '../utils/logger.js';
 
@@ -89,18 +91,18 @@ export class LineHandler {
       const upload = await this.deps.s3Service.upload(buffer, 'image/jpeg');
       uploadedKey = upload.key;
 
-      const captions = await this.deps.aiService.generateCaptions(upload.url);
+      const dishes = await this.deps.aiService.recognizeDishes(upload.url);
       const session: PostSession = {
         userId,
         imageS3Key: upload.key,
         imageUrl: upload.url,
-        captions,
+        dishes,
         createdAt: new Date(),
-        status: 'pending_confirm',
+        status: 'pending_dish_confirm',
       };
 
       this.deps.sessionStore.set(userId, session);
-      await this.pushMessages(userId, [buildPreviewMessage(captions)]);
+      await this.pushMessages(userId, [buildDishConfirmMessage(dishes)]);
     } catch (error) {
       if (error instanceof S3UploadError) {
         await this.pushText(userId, LINE_MESSAGES.s3UploadFailed);
@@ -111,7 +113,7 @@ export class LineHandler {
         if (uploadedKey) {
           await this.safeDeleteS3(uploadedKey);
         }
-        await this.pushText(userId, LINE_MESSAGES.aiFailed);
+        await this.pushText(userId, LINE_MESSAGES.dishRecognitionFailed);
         return;
       }
 
@@ -124,6 +126,12 @@ export class LineHandler {
     data?: string,
   ): Promise<void> {
     switch (data) {
+      case POSTBACK_ACTIONS.dishConfirm:
+        await this.handleDishConfirm(userId);
+        break;
+      case POSTBACK_ACTIONS.dishReject:
+        await this.handleDishReject(userId);
+        break;
       case POSTBACK_ACTIONS.confirm:
         await this.handleConfirm(userId);
         break;
@@ -146,7 +154,7 @@ export class LineHandler {
     text?: string,
   ): Promise<void> {
     const session = this.deps.sessionStore.get(userId);
-    if (!session || session.status !== 'pending_edit') {
+    if (!session) {
       return;
     }
 
@@ -154,6 +162,65 @@ export class LineHandler {
       return;
     }
 
+    if (session.status === 'pending_dish_input') {
+      await this.handleManualDishInput(userId, session, text);
+      return;
+    }
+
+    if (session.status === 'pending_edit') {
+      await this.handleCaptionEdit(userId, session, text);
+    }
+  }
+
+  private async handleDishConfirm(userId: string): Promise<void> {
+    const session = this.deps.sessionStore.get(userId);
+    if (!session || session.status !== 'pending_dish_confirm') {
+      await this.pushText(userId, LINE_MESSAGES.sessionExpired);
+      return;
+    }
+
+    await this.generateAndPreviewCaptions(userId, session);
+  }
+
+  private async handleDishReject(userId: string): Promise<void> {
+    const session = this.deps.sessionStore.get(userId);
+    if (!session || session.status !== 'pending_dish_confirm') {
+      await this.pushText(userId, LINE_MESSAGES.sessionExpired);
+      return;
+    }
+
+    this.deps.sessionStore.set(userId, {
+      ...session,
+      status: 'pending_dish_input',
+    });
+    await this.pushText(userId, LINE_MESSAGES.dishInputPrompt);
+  }
+
+  private async handleManualDishInput(
+    userId: string,
+    session: PostSession,
+    text: string,
+  ): Promise<void> {
+    const dishes = parseManualDishes(text);
+    if (!dishes) {
+      await this.pushText(userId, LINE_MESSAGES.dishInputInvalid);
+      return;
+    }
+
+    const updated: PostSession = {
+      ...session,
+      dishes,
+      status: 'pending_dish_input',
+    };
+
+    await this.generateAndPreviewCaptions(userId, updated);
+  }
+
+  private async handleCaptionEdit(
+    userId: string,
+    session: PostSession,
+    text: string,
+  ): Promise<void> {
     const updatedCaptions = parseEditedCaptions(text);
 
     const updated: PostSession = {
@@ -166,9 +233,38 @@ export class LineHandler {
     await this.pushMessages(userId, [buildPreviewMessage(updatedCaptions)]);
   }
 
+  private async generateAndPreviewCaptions(
+    userId: string,
+    session: PostSession,
+  ): Promise<void> {
+    await this.pushText(userId, LINE_MESSAGES.captionGenerating);
+
+    try {
+      const captions = await this.deps.aiService.generateCaptions(
+        session.imageUrl,
+        session.dishes,
+      );
+      const updated: PostSession = {
+        ...session,
+        captions,
+        status: 'pending_confirm',
+      };
+
+      this.deps.sessionStore.set(userId, updated);
+      await this.pushMessages(userId, [buildPreviewMessage(captions)]);
+    } catch (error) {
+      if (error instanceof AIServiceError) {
+        await this.pushText(userId, LINE_MESSAGES.aiFailed);
+        return;
+      }
+
+      this.log.error({ err: error, userId }, 'Caption generation failed');
+    }
+  }
+
   private async handleEditStart(userId: string): Promise<void> {
     const session = this.deps.sessionStore.get(userId);
-    if (!session || session.status !== 'pending_confirm') {
+    if (!session || session.status !== 'pending_confirm' || !session.captions) {
       await this.pushText(userId, LINE_MESSAGES.sessionExpired);
       return;
     }
@@ -183,7 +279,7 @@ export class LineHandler {
 
   private async handleConfirm(userId: string): Promise<void> {
     const session = this.deps.sessionStore.get(userId);
-    if (!session) {
+    if (!session?.captions) {
       await this.pushText(userId, LINE_MESSAGES.sessionExpired);
       return;
     }
@@ -207,30 +303,12 @@ export class LineHandler {
 
   private async handleRegenerate(userId: string): Promise<void> {
     const session = this.deps.sessionStore.get(userId);
-    if (!session) {
+    if (!session || session.status !== 'pending_confirm') {
       await this.pushText(userId, LINE_MESSAGES.sessionExpired);
       return;
     }
 
-    try {
-      const captions = await this.deps.aiService.generateCaptions(
-        session.imageUrl,
-      );
-      const updated: PostSession = {
-        ...session,
-        captions,
-        status: 'pending_confirm',
-      };
-      this.deps.sessionStore.set(userId, updated);
-      await this.pushMessages(userId, [buildPreviewMessage(captions)]);
-    } catch (error) {
-      if (error instanceof AIServiceError) {
-        await this.pushText(userId, LINE_MESSAGES.aiFailed);
-        return;
-      }
-
-      this.log.error({ err: error, userId }, 'Regenerate failed');
-    }
+    await this.generateAndPreviewCaptions(userId, session);
   }
 
   private async handleCancel(userId: string): Promise<void> {
