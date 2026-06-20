@@ -6,12 +6,14 @@ import { createChildLogger } from '../utils/logger.js';
 import { validateCaptionSet } from '../utils/validateCaptionSet.js';
 import { validateDishList } from '../utils/validateDishList.js';
 
-const DISH_RECOGNITION_PROMPT = `你是一位餐飲圖片分析專家。根據使用者提供的圖片，辨識圖中的主菜。
-規則：
-- 只辨識主菜，不含飲料、配菜、餐具
-- 依圖片實際數量辨識，1～5 道
-- 使用繁體中文菜名
-- 回傳格式：嚴格 JSON，不含任何 markdown 或額外說明
+const DISH_RECOGNITION_PROMPT = `你是一位專業的餐飲圖片辨識專家，擅長辨識各類菜餚。請仔細分析圖片中的食物。
+
+辨識規則：
+- 只辨識主菜（主要料理），排除：飲料、湯品、配菜、醬料、餐具、盤飾
+- 依圖片實際呈現數量辨識，最多 5 道
+- 菜名使用具體描述性的繁體中文，例如「紅燒獅子頭」而非「肉」，「清炒蝦仁」而非「蝦」
+- 若圖片模糊或無法辨識食物，回傳空陣列 { "dishes": [] }
+- 回傳格式：嚴格 JSON，不含任何 markdown、code block 或額外說明
 
 回傳格式：
 { "dishes": ["菜名1", "菜名2", ...] }`;
@@ -167,9 +169,9 @@ export class OpenAIService implements IAIService {
 
   private createDishRecognition(imageUrl: string) {
     return this.client.chat.completions.create({
-      model: 'gpt-4o-mini',
+      model: 'gpt-4o',
       max_tokens: 300,
-      temperature: 0.3,
+      temperature: 0.2,
       response_format: { type: 'json_object' },
       messages: [
         { role: 'system', content: DISH_RECOGNITION_PROMPT },
