@@ -20,105 +20,126 @@ const validCaptionJson = JSON.stringify({
   threads: { caption: 'th', hashtags: '#c' },
 });
 
+const serviceConfig = {
+  OPENAI_API_KEY: 'openai-key',
+  DEEPSEEK_API_KEY: 'deepseek-key',
+};
+
 describe('OpenAIService', () => {
-  let client: ReturnType<typeof createMockClient>;
+  let recognitionClient: ReturnType<typeof createMockClient>;
+  let captionClient: ReturnType<typeof createMockClient>;
 
   beforeEach(() => {
-    client = createMockClient();
+    recognitionClient = createMockClient();
+    captionClient = createMockClient();
   });
 
-  it('recognizes dishes with json response format', async () => {
-    client.chat.completions.create.mockResolvedValue({
+  it('recognizes dishes with OpenAI vision and json response format', async () => {
+    recognitionClient.chat.completions.create.mockResolvedValue({
       choices: [{ message: { content: validDishJson } }],
       usage: { total_tokens: 50 },
     });
 
     const service = new OpenAIService({
-      config: { OPENAI_API_KEY: 'key' },
-      client: client as never,
+      config: serviceConfig,
+      recognitionClient: recognitionClient as never,
+      captionClient: captionClient as never,
     });
 
     const dishes = await service.recognizeDishes('https://img');
 
     expect(dishes).toEqual(['滷肉飯', '雞腿排']);
-    expect(client.chat.completions.create).toHaveBeenCalledWith(
+    expect(recognitionClient.chat.completions.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: 'gpt-4o-mini',
+        model: 'gpt-4o',
         response_format: { type: 'json_object' },
       }),
     );
+    expect(captionClient.chat.completions.create).not.toHaveBeenCalled();
   });
 
   it('throws AIServiceError for invalid dish JSON shape', async () => {
-    client.chat.completions.create.mockResolvedValue({
+    recognitionClient.chat.completions.create.mockResolvedValue({
       choices: [{ message: { content: '{"dishes":[]}' } }],
     });
 
     const service = new OpenAIService({
-      config: { OPENAI_API_KEY: 'key' },
-      client: client as never,
+      config: serviceConfig,
+      recognitionClient: recognitionClient as never,
+      captionClient: captionClient as never,
     });
 
     await expect(service.recognizeDishes('https://img')).rejects.toBeInstanceOf(
       AIServiceError,
     );
-    expect(client.chat.completions.create).toHaveBeenCalledTimes(2);
+    expect(recognitionClient.chat.completions.create).toHaveBeenCalledTimes(2);
   });
 
-  it('calls gpt-4o-mini with json response format for captions', async () => {
-    client.chat.completions.create.mockResolvedValue({
+  it('calls DeepSeek with json response format for captions', async () => {
+    captionClient.chat.completions.create.mockResolvedValue({
       choices: [{ message: { content: validCaptionJson } }],
       usage: { total_tokens: 100 },
     });
 
     const service = new OpenAIService({
-      config: { OPENAI_API_KEY: 'key' },
-      client: client as never,
+      config: serviceConfig,
+      recognitionClient: recognitionClient as never,
+      captionClient: captionClient as never,
     });
 
     const captions = await service.generateCaptions('https://img', ['滷肉飯']);
 
     expect(captions.instagram.caption).toBe('ig');
-    expect(client.chat.completions.create).toHaveBeenCalledWith(
+    expect(captionClient.chat.completions.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        model: 'gpt-4o-mini',
+        model: 'deepseek-v4-flash',
         max_tokens: 1000,
         temperature: 0.7,
         response_format: { type: 'json_object' },
+        messages: [
+          expect.objectContaining({ role: 'system' }),
+          expect.objectContaining({
+            role: 'user',
+            content: expect.stringContaining('菜色1: 滷肉飯'),
+          }),
+        ],
       }),
     );
+    expect(recognitionClient.chat.completions.create).not.toHaveBeenCalled();
   });
 
   it('throws AIServiceError for invalid caption JSON shape', async () => {
-    client.chat.completions.create.mockResolvedValue({
+    captionClient.chat.completions.create.mockResolvedValue({
       choices: [{ message: { content: '{"instagram":{}}' } }],
     });
 
     const service = new OpenAIService({
-      config: { OPENAI_API_KEY: 'key' },
-      client: client as never,
+      config: serviceConfig,
+      recognitionClient: recognitionClient as never,
+      captionClient: captionClient as never,
     });
 
     await expect(
       service.generateCaptions('https://img', ['滷肉飯']),
     ).rejects.toBeInstanceOf(AIServiceError);
-    expect(client.chat.completions.create).toHaveBeenCalledTimes(2);
+    expect(captionClient.chat.completions.create).toHaveBeenCalledTimes(2);
   });
 
   it('retries once on 429 and succeeds', async () => {
-    client.chat.completions.create
+    captionClient.chat.completions.create
       .mockRejectedValueOnce({ status: 429 })
       .mockResolvedValueOnce({
         choices: [{ message: { content: validCaptionJson } }],
       });
 
     const service = new OpenAIService({
-      config: { OPENAI_API_KEY: 'key' },
-      client: client as never,
+      config: serviceConfig,
+      recognitionClient: recognitionClient as never,
+      captionClient: captionClient as never,
     });
 
     const captions = await service.generateCaptions('https://img', ['滷肉飯']);
     expect(captions.facebook.caption).toBe('fb');
-    expect(client.chat.completions.create).toHaveBeenCalledTimes(2);
+    expect(captionClient.chat.completions.create).toHaveBeenCalledTimes(2);
   });
 });
