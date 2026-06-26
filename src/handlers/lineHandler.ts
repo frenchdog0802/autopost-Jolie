@@ -254,6 +254,15 @@ export class LineHandler {
       await this.pushMessages(userId, [buildPreviewMessage(captions)]);
     } catch (error) {
       if (error instanceof AIServiceError) {
+        this.log.error(
+          {
+            userId,
+            dishes: session.dishes,
+            imageUrl: session.imageUrl,
+            reason: error.message,
+          },
+          'Caption generation failed for user',
+        );
         await this.pushText(userId, LINE_MESSAGES.aiFailed);
         return;
       }

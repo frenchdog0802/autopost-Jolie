@@ -93,7 +93,7 @@ describe('OpenAIService', () => {
     expect(captionClient.chat.completions.create).toHaveBeenCalledWith(
       expect.objectContaining({
         model: 'deepseek-v4-flash',
-        max_tokens: 1000,
+        max_tokens: 4000,
         temperature: 0.7,
         response_format: { type: 'json_object' },
         messages: [

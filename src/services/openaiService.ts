@@ -68,6 +68,66 @@ const CAPTION_SYSTEM_PROMPT = `你是一位溫柔系家庭主婦，擅長經營�
 
 const DEEPSEEK_CAPTION_MODEL = 'deepseek-v4-flash';
 const DEEPSEEK_API_BASE_URL = 'https://api.deepseek.com';
+const LOG_CONTENT_PREVIEW_LENGTH = 600;
+
+function previewContent(content: string, maxLength = LOG_CONTENT_PREVIEW_LENGTH): string {
+  if (content.length <= maxLength) {
+    return content;
+  }
+
+  return `${content.slice(0, maxLength)}...`;
+}
+
+function summarizeUnknownError(error: unknown): Record<string, unknown> {
+  if (error instanceof Error) {
+    return {
+      name: error.name,
+      message: error.message,
+    };
+  }
+
+  return { value: String(error) };
+}
+
+function summarizeApiError(error: unknown): Record<string, unknown> {
+  if (typeof error !== 'object' || error === null) {
+    return summarizeUnknownError(error);
+  }
+
+  const record = error as Record<string, unknown>;
+  const nestedError =
+    typeof record.error === 'object' && record.error !== null
+      ? (record.error as Record<string, unknown>)
+      : undefined;
+
+  return {
+    status: record.status,
+    message: record.message,
+    code: record.code,
+    type: record.type,
+    apiMessage: nestedError?.message,
+    apiCode: nestedError?.code,
+  };
+}
+
+function summarizeCaptionResponse(response: {
+  choices: Array<{
+    finish_reason?: string | null;
+    message?: { content?: string | null; reasoning_content?: string | null };
+  }>;
+  usage?: unknown;
+}): Record<string, unknown> {
+  const choice = response.choices[0];
+  const content = choice?.message?.content ?? '';
+  const reasoningContent = choice?.message?.reasoning_content ?? '';
+
+  return {
+    finishReason: choice?.finish_reason,
+    contentLength: content.length,
+    reasoningContentLength: reasoningContent.length,
+    usage: response.usage,
+  };
+}
 
 export interface OpenAIServiceDeps {
   config: Pick<RuntimeConfig, 'OPENAI_API_KEY' | 'DEEPSEEK_API_KEY'>;
@@ -118,7 +178,16 @@ export class OpenAIService implements IAIService {
     try {
       return await this.generateCaptionsWithRetry(imageUrl, dishes);
     } catch (error) {
-      this.log.error({ err: error, imageUrl, dishes }, 'Caption generation failed');
+      this.log.error(
+        {
+          err: summarizeUnknownError(error),
+          apiError: summarizeApiError(error),
+          imageUrl,
+          dishes,
+          model: DEEPSEEK_CAPTION_MODEL,
+        },
+        'Caption generation failed',
+      );
 
       if (error instanceof AIServiceError) {
         throw error;
@@ -163,12 +232,45 @@ export class OpenAIService implements IAIService {
     dishes: string[],
     attempt = 0,
   ): Promise<CaptionSet> {
-    const response = await this.callWithOptionalRetry(() =>
-      this.createCaptionGeneration(imageUrl, dishes),
-    );
+    let response;
+
+    try {
+      response = await this.callWithOptionalRetry(() =>
+        this.createCaptionGeneration(imageUrl, dishes),
+      );
+    } catch (error) {
+      this.log.error(
+        {
+          attempt,
+          dishes,
+          imageUrl,
+          model: DEEPSEEK_CAPTION_MODEL,
+          apiError: summarizeApiError(error),
+          err: summarizeUnknownError(error),
+        },
+        'DeepSeek caption API request failed',
+      );
+      throw error;
+    }
+
     const content = response.choices[0]?.message?.content;
+    const responseMeta = summarizeCaptionResponse(response);
 
     if (!content) {
+      const failureContext = {
+        attempt,
+        dishes,
+        imageUrl,
+        model: DEEPSEEK_CAPTION_MODEL,
+        ...responseMeta,
+      };
+
+      if (attempt === 0) {
+        this.log.warn(failureContext, 'Empty AI caption response, retrying once');
+        return this.generateCaptionsWithRetry(imageUrl, dishes, attempt + 1);
+      }
+
+      this.log.error(failureContext, 'Empty AI caption response after retry');
       throw new AIServiceError('Empty AI response');
     }
 
@@ -187,9 +289,29 @@ export class OpenAIService implements IAIService {
 
       return captions;
     } catch (error) {
-      if (error instanceof AIServiceError && attempt === 0) {
-        this.log.warn({ imageUrl, dishes }, 'Invalid AI caption shape, retrying once');
+      const failureContext = {
+        attempt,
+        dishes,
+        imageUrl,
+        model: DEEPSEEK_CAPTION_MODEL,
+        ...responseMeta,
+        contentPreview: previewContent(content),
+        err: summarizeUnknownError(error),
+      };
+
+      if (attempt === 0) {
+        this.log.warn(failureContext, 'Invalid AI caption response, retrying once');
         return this.generateCaptionsWithRetry(imageUrl, dishes, attempt + 1);
+      }
+
+      this.log.error(failureContext, 'Invalid AI caption response after retry');
+
+      if (error instanceof AIServiceError) {
+        throw error;
+      }
+
+      if (error instanceof SyntaxError) {
+        throw new AIServiceError(`Invalid JSON from caption model: ${error.message}`);
       }
 
       throw error;
@@ -233,7 +355,7 @@ export class OpenAIService implements IAIService {
 
     return this.captionClient.chat.completions.create({
       model: DEEPSEEK_CAPTION_MODEL,
-      max_tokens: 1000,
+      max_tokens: 4000,
       temperature: 0.7,
       response_format: { type: 'json_object' },
       messages: [
