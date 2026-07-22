@@ -94,7 +94,7 @@ describe('OpenAIService', () => {
       expect.objectContaining({
         model: 'deepseek-v4-flash',
         max_tokens: 4000,
-        temperature: 0.85,
+        temperature: 0.75,
         response_format: { type: 'json_object' },
         messages: [
           expect.objectContaining({ role: 'system' }),
