@@ -108,7 +108,7 @@ describe('LineHandler', () => {
     expect(deps.lineService.pushMessage).not.toHaveBeenCalled();
   });
 
-  it('handles image happy path with dish recognition', async () => {
+  it('handles image upload and prompts for dish names', async () => {
     const deps = createDeps();
     const handler = new LineHandler(deps);
 
@@ -120,20 +120,21 @@ describe('LineHandler', () => {
 
     expect(deps.lineService.getMessageContent).toHaveBeenCalledWith('m1');
     expect(deps.s3Service.upload).toHaveBeenCalled();
-    expect(deps.aiService.recognizeDishes).toHaveBeenCalledWith('https://img');
+    expect(deps.aiService.recognizeDishes).not.toHaveBeenCalled();
     expect(deps.aiService.generateCaptions).not.toHaveBeenCalled();
     expect(deps.sessionStore.set).toHaveBeenCalledWith(
       'U123',
       expect.objectContaining({
-        status: 'pending_dish_confirm',
-        dishes,
+        status: 'pending_dish_input',
+        dishes: [],
+        imageUrl: 'https://img',
       }),
     );
     expect(deps.lineService.pushMessage).toHaveBeenCalledWith('U123', [
-      expect.objectContaining({
-        type: 'text',
-        text: expect.stringContaining('辨識到以下主菜'),
-      }),
+      { type: 'text', text: LINE_MESSAGES.imageProcessing },
+    ]);
+    expect(deps.lineService.pushMessage).toHaveBeenCalledWith('U123', [
+      { type: 'text', text: LINE_MESSAGES.dishInputPrompt },
     ]);
   });
 
@@ -155,29 +156,6 @@ describe('LineHandler', () => {
     expect(deps.sessionStore.set).not.toHaveBeenCalled();
     expect(deps.lineService.pushMessage).toHaveBeenCalledWith('U123', [
       { type: 'text', text: LINE_MESSAGES.s3UploadFailed },
-    ]);
-  });
-
-  it('deletes S3 and pushes dish recognition error when recognition fails', async () => {
-    const deps = createDeps({
-      aiService: {
-        recognizeDishes: vi
-          .fn()
-          .mockRejectedValue(new AIServiceError('fail')),
-        generateCaptions: vi.fn(),
-      },
-    });
-    const handler = new LineHandler(deps);
-
-    await handler.handleEvent({
-      type: 'message',
-      source: { userId: 'U123' },
-      message: { type: 'image', id: 'm1' },
-    });
-
-    expect(deps.s3Service.delete).toHaveBeenCalledWith('uploads/test.jpg');
-    expect(deps.lineService.pushMessage).toHaveBeenCalledWith('U123', [
-      { type: 'text', text: LINE_MESSAGES.dishRecognitionFailed },
     ]);
   });
 
@@ -435,6 +413,86 @@ describe('LineHandler', () => {
       dishes,
     );
     expect(deps.sessionStore.set).toHaveBeenCalled();
+  });
+
+  it('restores preview quick replies when regenerate fails', async () => {
+    const session: PostSession = {
+      userId: 'U123',
+      imageS3Key: 'uploads/test.jpg',
+      imageUrl: 'https://img',
+      dishes,
+      captions,
+      createdAt: new Date(),
+      status: 'pending_confirm',
+    };
+
+    const deps = createDeps({
+      aiService: {
+        recognizeDishes: vi.fn(),
+        generateCaptions: vi
+          .fn()
+          .mockRejectedValue(new AIServiceError('fail')),
+      },
+      sessionStore: {
+        get: vi.fn().mockReturnValue(session),
+        set: vi.fn(),
+        delete: vi.fn(),
+      },
+    });
+    const handler = new LineHandler(deps);
+
+    await handler.handleEvent({
+      type: 'postback',
+      source: { userId: 'U123' },
+      postback: { data: POSTBACK_ACTIONS.regenerate },
+    });
+
+    expect(deps.lineService.pushMessage).toHaveBeenCalledWith('U123', [
+      { type: 'text', text: LINE_MESSAGES.aiFailed },
+    ]);
+    expect(deps.lineService.pushMessage).toHaveBeenCalledWith('U123', [
+      expect.objectContaining({
+        type: 'text',
+        text: expect.stringContaining('請確認以下文案'),
+        quickReply: expect.anything(),
+      }),
+    ]);
+  });
+
+  it('prompts for dishes when regenerate has empty dish list', async () => {
+    const session: PostSession = {
+      userId: 'U123',
+      imageS3Key: 'uploads/test.jpg',
+      imageUrl: 'https://img',
+      dishes: [],
+      captions,
+      createdAt: new Date(),
+      status: 'pending_confirm',
+    };
+
+    const deps = createDeps({
+      sessionStore: {
+        get: vi.fn().mockReturnValue(session),
+        set: vi.fn(),
+        delete: vi.fn(),
+      },
+    });
+    const handler = new LineHandler(deps);
+
+    await handler.handleEvent({
+      type: 'postback',
+      source: { userId: 'U123' },
+      postback: { data: POSTBACK_ACTIONS.regenerate },
+    });
+
+    expect(deps.aiService.generateCaptions).not.toHaveBeenCalled();
+    expect(deps.sessionStore.set).toHaveBeenCalledWith(
+      'U123',
+      expect.objectContaining({ status: 'pending_dish_input' }),
+    );
+    expect(deps.lineService.pushMessage).toHaveBeenCalledWith('U123', [
+      { type: 'text', text: LINE_MESSAGES.dishInputPrompt },
+    ]);
   });
 
   it('cancels session and deletes S3 object', async () => {

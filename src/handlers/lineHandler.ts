@@ -10,7 +10,6 @@ import type {
 import { LINE_MESSAGES, POSTBACK_ACTIONS } from '../types/constants.js';
 import { S3UploadError } from '../types/errors.js';
 import { AIServiceError } from '../types/errors.js';
-import { buildDishConfirmMessage } from '../utils/buildDishConfirmMessage.js';
 import { buildPreviewMessage } from '../utils/buildPreviewMessage.js';
 import { parseEditedCaptions } from '../utils/parseEditedCaptions.js';
 import { parseManualDishes } from '../utils/parseManualDishes.js';
@@ -84,36 +83,24 @@ export class LineHandler {
 
     await this.pushText(userId, LINE_MESSAGES.imageProcessing);
 
-    let uploadedKey: string | undefined;
-
     try {
       const buffer = await this.deps.lineService.getMessageContent(messageId);
       const upload = await this.deps.s3Service.upload(buffer, 'image/jpeg');
-      uploadedKey = upload.key;
 
-      const dishes = await this.deps.aiService.recognizeDishes(upload.url);
       const session: PostSession = {
         userId,
         imageS3Key: upload.key,
         imageUrl: upload.url,
-        dishes,
+        dishes: [],
         createdAt: new Date(),
-        status: 'pending_dish_confirm',
+        status: 'pending_dish_input',
       };
 
       this.deps.sessionStore.set(userId, session);
-      await this.pushMessages(userId, [buildDishConfirmMessage(dishes)]);
+      await this.pushText(userId, LINE_MESSAGES.dishInputPrompt);
     } catch (error) {
       if (error instanceof S3UploadError) {
         await this.pushText(userId, LINE_MESSAGES.s3UploadFailed);
-        return;
-      }
-
-      if (error instanceof AIServiceError) {
-        if (uploadedKey) {
-          await this.safeDeleteS3(uploadedKey);
-        }
-        await this.pushText(userId, LINE_MESSAGES.dishRecognitionFailed);
         return;
       }
 
@@ -213,6 +200,7 @@ export class LineHandler {
       status: 'pending_dish_input',
     };
 
+    this.deps.sessionStore.set(userId, updated);
     await this.generateAndPreviewCaptions(userId, updated);
   }
 
@@ -226,6 +214,7 @@ export class LineHandler {
     const updated: PostSession = {
       ...session,
       captions: updatedCaptions,
+      createdAt: new Date(),
       status: 'pending_confirm',
     };
 
@@ -247,6 +236,7 @@ export class LineHandler {
       const updated: PostSession = {
         ...session,
         captions,
+        createdAt: new Date(),
         status: 'pending_confirm',
       };
 
@@ -264,10 +254,31 @@ export class LineHandler {
           'Caption generation failed for user',
         );
         await this.pushText(userId, LINE_MESSAGES.aiFailed);
+
+        // Quick Reply disappears after "文案生成中"; restore preview buttons if possible.
+        if (session.captions) {
+          this.deps.sessionStore.set(userId, {
+            ...session,
+            status: 'pending_confirm',
+          });
+          await this.pushMessages(userId, [
+            buildPreviewMessage(session.captions),
+          ]);
+        }
         return;
       }
 
       this.log.error({ err: error, userId }, 'Caption generation failed');
+
+      if (session.captions) {
+        this.deps.sessionStore.set(userId, {
+          ...session,
+          status: 'pending_confirm',
+        });
+        await this.pushMessages(userId, [
+          buildPreviewMessage(session.captions),
+        ]);
+      }
     }
   }
 
@@ -314,6 +325,15 @@ export class LineHandler {
     const session = this.deps.sessionStore.get(userId);
     if (!session || session.status !== 'pending_confirm') {
       await this.pushText(userId, LINE_MESSAGES.sessionExpired);
+      return;
+    }
+
+    if (session.dishes.length === 0) {
+      this.deps.sessionStore.set(userId, {
+        ...session,
+        status: 'pending_dish_input',
+      });
+      await this.pushText(userId, LINE_MESSAGES.dishInputPrompt);
       return;
     }
 
